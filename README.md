@@ -23,5 +23,4 @@ Instruções rápidas:
    python npc_fuzzy.py
 
 Observações:
-- As funções de pertinência e regras foram traduzidas a partir dos arquivos Pistola.fcl, Sniper.fcl e RocketLauncher.fcl fornecidos.
-- Se desejar, é possível ajustar as funções e regras diretamente em npc_fuzzy.py.
+- As funções de pertinência e regras foram traduzidas a partir dos arquivos Pistola.fcl, Sniper.fcl e RocketLauncher.fcl 
