@@ -1,2 +1,27 @@
-# Trabalho-Ia-Aplica-o-Fuzzy
-Aplicação em Python que usa lógica fuzzy para simular a escolha da arma de um NPC. O usuário informa distância e munição, e o sistema calcula a desejabilidade de Pistola, Sniper e Rocket, recomendando a melhor opção com gráficos das funções de pertinência.
+
+NPC Weapon Selection (Python)
+=============================
+
+Este projeto converte a modelagem fuzzy (original em .fcl / jFuzzyLogic) para Python usando scikit-fuzzy.
+Ele foi gerado automaticamente para uso em apresentação acadêmica e contém:
+
+
+- npc_fuzzy.py : script principal (entrada via terminal + gráficos)
+- requirements.txt : dependências para instalar com pip
+- README.md : este arquivo
+
+Instruções rápidas:
+1. Criar um ambiente virtual (opcional):
+   python -m venv venv
+   source venv/bin/activate   # Linux / macOS
+   venv\Scripts\activate    # Windows PowerShell
+
+2. Instalar dependências:
+   pip install -r requirements.txt
+
+3. Rodar:
+   python npc_fuzzy.py
+
+Observações:
+- As funções de pertinência e regras foram traduzidas a partir dos arquivos Pistola.fcl, Sniper.fcl e RocketLauncher.fcl fornecidos.
+- Se desejar, é possível ajustar as funções e regras diretamente em npc_fuzzy.py.

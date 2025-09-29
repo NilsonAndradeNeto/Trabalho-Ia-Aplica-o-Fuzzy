@@ -1,0 +1,5 @@
+scikit-fuzzy==0.8.0
+matplotlib
+numpy
+
+# Python 3.8+ recommended
