@@ -12,14 +12,26 @@ Ele foi gerado automaticamente para uso em apresentação acadêmica e contém:
 
 Instruções rápidas:
 1. Criar um ambiente virtual (opcional):
-   python -m venv venv
+```bash
+   python -m venv venv # ou python 3
+```
+
+2. Execute o ambiente virtual (opicional):
+```bash
    source venv/bin/activate   # Linux / macOS
+```
+```bash
    venv\Scripts\activate    # Windows PowerShell
-
-2. Instalar dependências:
+```
+> (Linux/MacOS) -> Em caso de erro de permissão rode: `chmod u+r ./venv/bin/activate`
+   
+   
+3. Instalar dependências:
    pip install -r requirements.txt
+> Em caso de erro de versão da lib `scikit-fuzzy==0.8.0` modifique para `scikit-fuzzy==0.5.0`
+> execute também: `pip install -U numpy scipy scikit-fuzzy matplotlib networkx`
 
-3. Rodar:
+5. Rodar:
    python npc_fuzzy.py
 
 Observações:
