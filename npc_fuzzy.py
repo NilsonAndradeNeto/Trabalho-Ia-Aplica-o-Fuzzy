@@ -64,7 +64,7 @@ class NPCFuzzyWeaponSelector:
         self._weapon_catalog = [
             {
                 "name": "Rocket Launcher",
-                "color": "#ff6b6b",
+                "color": "#d32f2f",
                 "system": ctrl.ControlSystem(
                     [
                         # Curto alcance é inseguro para foguetes
@@ -102,7 +102,7 @@ class NPCFuzzyWeaponSelector:
             },
             {
                 "name": "Sniper Rifle",
-                "color": "#4ecdc4",
+                "color": "#fbc02d",
                 "system": ctrl.ControlSystem(
                     [
                         # Ineficiente em curta distância
@@ -137,7 +137,7 @@ class NPCFuzzyWeaponSelector:
             },
             {
                 "name": "Pistol",
-                "color": "#45b7d1",
+                "color": "#388e3c",
                 "system": ctrl.ControlSystem(
                     [
                         # Curto alcance
@@ -404,7 +404,6 @@ class NPCFuzzyWeaponSelector:
 
         if melhor_arma in armas:
             idx = armas.index(melhor_arma)
-            barras[idx].set_edgecolor("gold")
             barras[idx].set_linewidth(4)
             barras[idx].set_alpha(1.0)
 
