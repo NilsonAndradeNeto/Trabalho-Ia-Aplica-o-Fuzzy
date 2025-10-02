@@ -65,6 +65,7 @@ class NPCFuzzyWeaponSelector:
             {
                 "name": "Rocket Launcher",
                 "color": "#d32f2f",
+                "ammo_capacity": 3,
                 "system": ctrl.ControlSystem(
                     [
                         # Curto alcance é inseguro para foguetes
@@ -103,6 +104,7 @@ class NPCFuzzyWeaponSelector:
             {
                 "name": "Sniper Rifle",
                 "color": "#fbc02d",
+                "ammo_capacity": 10,
                 "system": ctrl.ControlSystem(
                     [
                         # Ineficiente em curta distância
@@ -138,6 +140,7 @@ class NPCFuzzyWeaponSelector:
             {
                 "name": "Pistol",
                 "color": "#388e3c",
+                "ammo_capacity": 30,
                 "system": ctrl.ControlSystem(
                     [
                         # Curto alcance
@@ -171,14 +174,18 @@ class NPCFuzzyWeaponSelector:
                 ),
             },
         ]
-    def evaluate(self, distancia_val: float, municao_val: float) -> Dict[str, Dict[str, float]]:
+    def evaluate(
+        self,
+        distancia_val: float,
+        municao_por_arma: Dict[str, float],
+    ) -> Dict[str, Dict[str, float]]:
         """Executa o sistema fuzzy para cada arma e retorna os scores."""
         resultados: Dict[str, Dict[str, float]] = {}
 
         for weapon in self._weapon_catalog:
             simulador = ctrl.ControlSystemSimulation(weapon["system"])
             simulador.input["distancia"] = distancia_val
-            simulador.input["municao"] = municao_val
+            simulador.input["municao"] = municao_por_arma.get(weapon["name"], 0.0)
             simulador.compute()
             score = float(simulador.output.get("desejabilidade", 0.0))
 
@@ -200,22 +207,53 @@ class NPCFuzzyWeaponSelector:
             if distancia_val is None:
                 break
 
-            municao_val = self._prompt_value("Munição disponível (0-100%): ")
-            if municao_val is None:
+            municao_balas: Dict[str, float] = {}
+            municao_percentuais: Dict[str, float] = {}
+
+            for weapon in self._weapon_catalog:
+                capacidade = weapon.get("ammo_capacity", 0)
+                prompt = (
+                    f"Munição disponível para {weapon['name']} "
+                    f"(0-{capacidade} balas): "
+                )
+                valor = self._prompt_value(prompt, float(capacidade))
+                if valor is None:
+                    municao_balas = {}
+                    municao_percentuais = {}
+                    break
+
+                municao_balas[weapon["name"]] = valor
+                if capacidade > 0:
+                    percent = (valor / capacidade) * 100.0
+                else:
+                    percent = 0.0
+                municao_percentuais[weapon["name"]] = max(0.0, min(percent, 100.0))
+
+            if len(municao_percentuais) != len(self._weapon_catalog):
                 break
 
-            resultados = self.evaluate(distancia_val, municao_val)
+            resultados = self.evaluate(distancia_val, municao_percentuais)
             melhor_arma = max(resultados, key=lambda arma: resultados[arma]["value"])
 
-            self._exibir_console(distancia_val, municao_val, resultados, melhor_arma)
-            self._exibir_grafico(distancia_val, municao_val, resultados, melhor_arma)
+            self._exibir_console(
+                distancia_val,
+                municao_balas,
+                resultados,
+                melhor_arma,
+            )
+            self._exibir_grafico(
+                distancia_val,
+                municao_percentuais,
+                resultados,
+                melhor_arma,
+            )
 
             if not self._perguntar_continuacao():
                 break
 
         print("\nSessão encerrada. Obrigado por testar o painel!")
 
-    def _prompt_value(self, prompt: str) -> float:
+    def _prompt_value(self, prompt: str, max_value: float = 100.0) -> float:
         while True:
             try:
                 raw = input(prompt).strip().lower()
@@ -223,9 +261,10 @@ class NPCFuzzyWeaponSelector:
                     return None
 
                 value = float(raw.replace(",", "."))
-                if 0 <= value <= 100:
+                if 0 <= value <= max_value:
                     return value
-                print("Valor fora do intervalo permitido (0-100).")
+                limite_texto = f"{max_value:g}" if max_value >= 1 else f"{max_value:.2f}"
+                print(f"Valor fora do intervalo permitido (0-{limite_texto}).")
             except ValueError:
                 print("Entrada inválida. Utilize números ou 'sair'.")
             except KeyboardInterrupt:
@@ -248,7 +287,7 @@ class NPCFuzzyWeaponSelector:
     def _exibir_console(
         self,
         distancia_val: float,
-        municao_val: float,
+        municao_balas: Dict[str, float],
         resultados: Dict[str, Dict[str, float]],
         melhor_arma: str,
     ) -> None:
@@ -256,7 +295,19 @@ class NPCFuzzyWeaponSelector:
         print("| Cenário avaliado                         |")
         print("+------------------------------------------+")
         print(f"  Distância do alvo : {distancia_val:5.1f}%")
-        print(f"  Munição disponível: {municao_val:5.1f}%")
+        print("  Munição disponível por arma:")
+
+        for weapon in self._weapon_catalog:
+            nome = weapon["name"]
+            capacidade_real = weapon.get("ammo_capacity", 0)
+            divisor = capacidade_real if capacidade_real else 1
+            balas = municao_balas.get(nome, 0.0)
+            percentual = (balas / divisor) * 100.0
+            capacidade_texto = capacidade_real if capacidade_real else divisor
+            print(
+                f"    - {nome:<15}: {balas:5.0f}/{capacidade_texto} balas "
+                f"({percentual:5.1f}%)"
+            )
 
         print("\nRanking de desejabilidade")
         print("--------------------------------------------")
@@ -288,7 +339,7 @@ class NPCFuzzyWeaponSelector:
     def _exibir_grafico(
         self,
         distancia_val: float,
-        municao_val: float,
+        municao_percentuais: Dict[str, float],
         resultados: Dict[str, Dict[str, float]],
         melhor_arma: str,
     ) -> None:
@@ -300,12 +351,14 @@ class NPCFuzzyWeaponSelector:
         ax_bar = fig.add_subplot(grid[0, 2])
 
         self._plot_input(ax_dist, self.distancia, distancia_val, "Distância")
-        self._plot_input(ax_mun, self.municao, municao_val, "Munição")
-        self._plot_bar(ax_bar, distancia_val, municao_val, resultados, melhor_arma)
+        municao_para_plot = municao_percentuais.get(melhor_arma, 0.0)
+        titulo_municao = f"Munição ({melhor_arma})"
+        self._plot_input(ax_mun, self.municao, municao_para_plot, titulo_municao)
+        self._plot_bar(ax_bar, resultados, melhor_arma)
 
         fig.suptitle(
             "Sistema Fuzzy NPC - Seleção de Armas\n"
-            f"Distância: {distancia_val:.1f}% | Munição: {municao_val:.1f}%",
+            f"Distância: {distancia_val:.1f}% | Munição {melhor_arma}: {municao_para_plot:.1f}%",
             fontsize=15,
             fontweight="bold",
         )
@@ -391,8 +444,6 @@ class NPCFuzzyWeaponSelector:
     def _plot_bar(
         self,
         ax,
-        distancia_val: float,
-        municao_val: float,
         resultados: Dict[str, Dict[str, float]],
         melhor_arma: str,
     ) -> None:
