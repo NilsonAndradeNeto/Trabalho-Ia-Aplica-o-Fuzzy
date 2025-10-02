@@ -1,239 +1,437 @@
 #!/usr/bin/env python3
-"""
-npc_fuzzy.py - Versão polida com rótulos claros por arma
-- Entrada: distancia (0-100), municao (0-100)
-- Saída: desejabilidade por arma (0-100)
-- Gera dashboard de gráficos organizado, identifica cada plot e salva em ./output/
-"""
+import warnings
+from typing import Dict
 
-import os
-import time
+import matplotlib.pyplot as plt
 import numpy as np
 import skfuzzy as fuzz
 from skfuzzy import control as ctrl
-import matplotlib.pyplot as plt
 
-# --- Universos ---
-x_dist = np.arange(0, 101, 1)
-x_mun = np.arange(0, 101, 1)
-x_des = np.arange(0, 101, 1)
+warnings.filterwarnings("ignore")
 
-# --- Variáveis fuzzy (entradas) ---
-distancia = ctrl.Antecedent(x_dist, 'distancia')
-municao = ctrl.Antecedent(x_mun, 'municao')
 
-# --- Variável de saída ---
-desejabilidade = ctrl.Consequent(x_des, 'desejabilidade')
+class NPCFuzzyWeaponSelector:
+    def __init__(self) -> None:
+        self._setup_universes()
+        self._setup_memberships()
+        self._setup_weapons()
 
-# --- Funções de pertinência (baseadas nos .fcl originais) ---
-# Distância
-distancia['perto']  = fuzz.trimf(distancia.universe, [0, 0, 35])
-distancia['medio']  = fuzz.trimf(distancia.universe, [20, 50, 80])
-distancia['longe']  = fuzz.trimf(distancia.universe, [60, 100, 100])
+    def _setup_universes(self) -> None:
+        step = 1
+        self.x_dist = np.arange(0, 101, step)
+        self.x_mun = np.arange(0, 101, step)
+        self.x_des = np.arange(0, 101, step)
 
-# Munição
-municao['baixa'] = fuzz.trimf(municao.universe, [0, 0, 40])
-municao['media'] = fuzz.trimf(municao.universe, [20, 50, 80])
-municao['alta']  = fuzz.trimf(municao.universe, [60, 100, 100])
+    def _setup_memberships(self) -> None:
+        self.distancia = ctrl.Antecedent(self.x_dist, "distancia")
+        self.municao = ctrl.Antecedent(self.x_mun, "municao")
+        self.desejabilidade = ctrl.Consequent(self.x_des, "desejabilidade")
 
-# Saída desejabilidade
-desejabilidade['indesejavel']    = fuzz.trimf(desejabilidade.universe, [0, 0, 40])
-desejabilidade['desejavel']      = fuzz.trimf(desejabilidade.universe, [30, 55, 75])
-desejabilidade['imprescindivel'] = fuzz.trimf(desejabilidade.universe, [65, 85, 100])
+        # Distância
+        self.distancia["perto"] = fuzz.trimf(
+            self.distancia.universe, [0, 0, 35]
+        )
+        self.distancia["medio"] = fuzz.trimf(
+            self.distancia.universe, [20, 50, 80]
+        )
+        self.distancia["longe"] = fuzz.trimf(
+            self.distancia.universe, [60, 100, 100]
+        )
 
-# ---------------- Regras (cada arma) ----------------
-# Pistola (melhor em curto alcance)
-p_rules = [
-    ctrl.Rule(distancia['perto'] & municao['alta'], desejabilidade['imprescindivel']),
-    ctrl.Rule(distancia['perto'] & municao['media'], desejabilidade['desejavel']),
-    ctrl.Rule(distancia['perto'] & municao['baixa'], desejabilidade['indesejavel']),
-    ctrl.Rule(distancia['medio'] & municao['media'], desejabilidade['desejavel']),
-    ctrl.Rule(distancia['medio'] & municao['alta'], desejabilidade['desejavel']),
-    ctrl.Rule(distancia['longe'], desejabilidade['indesejavel']),
-]
-p_ctrl = ctrl.ControlSystem(p_rules)
+        # Munição
+        self.municao["baixa"] = fuzz.trimf(
+            self.municao.universe, [0, 0, 40]
+        )
+        self.municao["media"] = fuzz.trimf(
+            self.municao.universe, [20, 50, 80]
+        )
+        self.municao["alta"] = fuzz.trimf(
+            self.municao.universe, [60, 100, 100]
+        )
 
-# Sniper (melhor em longa)
-s_rules = [
-    ctrl.Rule(distancia['longe'] & municao['alta'], desejabilidade['imprescindivel']),
-    ctrl.Rule(distancia['longe'] & municao['media'], desejabilidade['desejavel']),
-    ctrl.Rule(distancia['medio'] & (municao['media'] | municao['alta']), desejabilidade['desejavel']),
-    ctrl.Rule(distancia['perto'], desejabilidade['indesejavel']),
-]
-s_ctrl = ctrl.ControlSystem(s_rules)
+        # Desejabilidade
+        self.desejabilidade["indesejavel"] = fuzz.trimf(
+            self.desejabilidade.universe, [0, 0, 40]
+        )
+        self.desejabilidade["desejavel"] = fuzz.trimf(
+            self.desejabilidade.universe, [30, 55, 75]
+        )
+        self.desejabilidade["imprescindivel"] = fuzz.trimf(
+            self.desejabilidade.universe, [65, 85, 100]
+        )
 
-# Rocket Launcher (bom em medio/longe se munição disponível)
-r_rules = [
-    ctrl.Rule(distancia['perto'], desejabilidade['indesejavel']),
-    ctrl.Rule(distancia['medio'] & municao['alta'], desejabilidade['imprescindivel']),
-    ctrl.Rule(distancia['medio'] & municao['media'], desejabilidade['desejavel']),
-    ctrl.Rule(distancia['longe'] & ~municao['baixa'], desejabilidade['desejavel']),
-    ctrl.Rule(distancia['longe'] & municao['alta'], desejabilidade['imprescindivel']),
-]
-r_ctrl = ctrl.ControlSystem(r_rules)
+    def _setup_weapons(self) -> None:
+        self._weapon_catalog = [
+            {
+                "name": "Rocket Launcher",
+                "color": "#ff6b6b",
+                "system": ctrl.ControlSystem(
+                    [
+                        # Curto alcance é inseguro para foguetes
+                        ctrl.Rule(
+                            self.distancia["perto"], self.desejabilidade["indesejavel"]
+                        ),
+                        # Alcance médio
+                        ctrl.Rule(
+                            self.distancia["medio"] & self.municao["alta"],
+                            self.desejabilidade["imprescindivel"],
+                        ),
+                        ctrl.Rule(
+                            self.distancia["medio"] & self.municao["media"],
+                            self.desejabilidade["desejavel"],
+                        ),
+                        ctrl.Rule(
+                            self.distancia["medio"] & self.municao["baixa"],
+                            self.desejabilidade["indesejavel"],
+                        ),
+                        # Alcance longo
+                        ctrl.Rule(
+                            self.distancia["longe"] & self.municao["alta"],
+                            self.desejabilidade["imprescindivel"],
+                        ),
+                        ctrl.Rule(
+                            self.distancia["longe"] & self.municao["media"],
+                            self.desejabilidade["desejavel"],
+                        ),
+                        ctrl.Rule(
+                            self.distancia["longe"] & self.municao["baixa"],
+                            self.desejabilidade["indesejavel"],
+                        ),
+                    ]
+                ),
+            },
+            {
+                "name": "Sniper Rifle",
+                "color": "#4ecdc4",
+                "system": ctrl.ControlSystem(
+                    [
+                        # Ineficiente em curta distância
+                        ctrl.Rule(
+                            self.distancia["perto"], self.desejabilidade["indesejavel"]
+                        ),
+                        # Distância média
+                        ctrl.Rule(
+                            self.distancia["medio"]
+                            & (self.municao["alta"] | self.municao["media"]),
+                            self.desejabilidade["desejavel"],
+                        ),
+                        ctrl.Rule(
+                            self.distancia["medio"] & self.municao["baixa"],
+                            self.desejabilidade["indesejavel"],
+                        ),
+                        # Distância longa
+                        ctrl.Rule(
+                            self.distancia["longe"] & self.municao["alta"],
+                            self.desejabilidade["imprescindivel"],
+                        ),
+                        ctrl.Rule(
+                            self.distancia["longe"] & self.municao["media"],
+                            self.desejabilidade["desejavel"],
+                        ),
+                        ctrl.Rule(
+                            self.distancia["longe"] & self.municao["baixa"],
+                            self.desejabilidade["desejavel"],
+                        ),
+                    ]
+                ),
+            },
+            {
+                "name": "Pistol",
+                "color": "#45b7d1",
+                "system": ctrl.ControlSystem(
+                    [
+                        # Curto alcance
+                        ctrl.Rule(
+                            self.distancia["perto"] & self.municao["alta"],
+                            self.desejabilidade["imprescindivel"],
+                        ),
+                        ctrl.Rule(
+                            self.distancia["perto"] & self.municao["media"],
+                            self.desejabilidade["desejavel"],
+                        ),
+                        ctrl.Rule(
+                            self.distancia["perto"] & self.municao["baixa"],
+                            self.desejabilidade["desejavel"],
+                        ),
+                        # Distância média
+                        ctrl.Rule(
+                            self.distancia["medio"] & self.municao["baixa"],
+                            self.desejabilidade["desejavel"],
+                        ),
+                        ctrl.Rule(
+                            self.distancia["medio"]
+                            & (self.municao["media"] | self.municao["alta"]),
+                            self.desejabilidade["desejavel"],
+                        ),
+                        # Longo alcance
+                        ctrl.Rule(
+                            self.distancia["longe"], self.desejabilidade["indesejavel"]
+                        ),
+                    ]
+                ),
+            },
+        ]
+    def evaluate(self, distancia_val: float, municao_val: float) -> Dict[str, Dict[str, float]]:
+        """Executa o sistema fuzzy para cada arma e retorna os scores."""
+        resultados: Dict[str, Dict[str, float]] = {}
 
-# ---------------- Função utilitária: interp membership ----------------
-def degree_of(term_mf, universe, value):
-    """Interpreta o grau de pertinência de uma mf (array) no point value."""
-    return fuzz.interp_membership(universe, term_mf, value)
+        for weapon in self._weapon_catalog:
+            simulador = ctrl.ControlSystemSimulation(weapon["system"])
+            simulador.input["distancia"] = distancia_val
+            simulador.input["municao"] = municao_val
+            simulador.compute()
+            score = float(simulador.output.get("desejabilidade", 0.0))
 
-# ---------------- Avaliar (cria simulações novas cada vez) ----------------
-def avaliar(dist_val, mun_val):
-    p_sim = ctrl.ControlSystemSimulation(p_ctrl)
-    s_sim = ctrl.ControlSystemSimulation(s_ctrl)
-    r_sim = ctrl.ControlSystemSimulation(r_ctrl)
+            resultados[weapon["name"]] = {
+                "value": score,
+                "color": weapon["color"],
+            }
 
-    p_sim.input['distancia'] = dist_val
-    p_sim.input['municao'] = mun_val
-    p_sim.compute()
-    val_p = float(p_sim.output.get('desejabilidade', 0))
+        return resultados
 
-    s_sim.input['distancia'] = dist_val
-    s_sim.input['municao'] = mun_val
-    s_sim.compute()
-    val_s = float(s_sim.output.get('desejabilidade', 0))
+    def run(self) -> None:
+        print("\n============================================")
+        print("  Painel Fuzzy - Escolha de Armas para NPC")
+        print("============================================")
+        print("Informe valores de 0 a 100. Digite 'sair' para encerrar.\n")
 
-    r_sim.input['distancia'] = dist_val
-    r_sim.input['municao'] = mun_val
-    r_sim.compute()
-    val_r = float(r_sim.output.get('desejabilidade', 0))
+        while True:
+            distancia_val = self._prompt_value("Distância do alvo (0-100%): ")
+            if distancia_val is None:
+                break
 
-    # Também retornamos os sims para plot com shading/defuzz
-    return {
-        'Pistola': {'value': val_p, 'sim': p_sim},
-        'Sniper': {'value': val_s, 'sim': s_sim},
-        'Rocket Launcher': {'value': val_r, 'sim': r_sim}
-    }
+            municao_val = self._prompt_value("Munição disponível (0-100%): ")
+            if municao_val is None:
+                break
 
-# ---------------- Plotagem organizada e profissional (com rótulos grandes) ----------------
-def plot_results(dist_val, mun_val, results):
-    timestamp = time.strftime("%Y%m%d_%H%M%S")
-    out_dir = "output"
-    os.makedirs(out_dir, exist_ok=True)
-    fname = os.path.join(out_dir, f"result_{timestamp}.png")
+            resultados = self.evaluate(distancia_val, municao_val)
+            melhor_arma = max(resultados, key=lambda arma: resultados[arma]["value"])
 
-    # Layout: 2 rows x 3 cols
-    fig = plt.figure(constrained_layout=True, figsize=(15, 9))
-    gs = fig.add_gridspec(2, 3)
+            self._exibir_console(distancia_val, municao_val, resultados, melhor_arma)
+            self._exibir_grafico(distancia_val, municao_val, resultados, melhor_arma)
 
-    # Top row: entradas (distancia, municao) + resumo (texto)
-    ax_dist = fig.add_subplot(gs[0, 0])
-    ax_mun  = fig.add_subplot(gs[0, 1])
-    ax_text = fig.add_subplot(gs[0, 2])
-    ax_text.axis('off')
+            if not self._perguntar_continuacao():
+                break
 
-    # Bottom row: outputs por arma (3 plots)
-    ax_p = fig.add_subplot(gs[1, 0])
-    ax_s = fig.add_subplot(gs[1, 1])
-    ax_r = fig.add_subplot(gs[1, 2])
+        print("\nSessão encerrada. Obrigado por testar o painel!")
 
-    # --- Plot de entradas (com MFs) ---
-    # Distancia MFs
-    ax_dist.plot(distancia.universe, distancia['perto'].mf, linestyle='-', label='perto')
-    ax_dist.plot(distancia.universe, distancia['medio'].mf, linestyle='-', label='medio')
-    ax_dist.plot(distancia.universe, distancia['longe'].mf, linestyle='-', label='longe')
-    ax_dist.set_title(f"Distância (valor = {dist_val})")
-    ax_dist.set_xlabel("Distância")
-    ax_dist.set_ylabel("Grau de pertinência")
-    ax_dist.set_xlim(0, 100)
-    ax_dist.legend()
-    ax_dist.axvline(dist_val, color='gray', linestyle='--', linewidth=1)
-    d_perto = degree_of(distancia['perto'].mf, distancia.universe, dist_val)
-    d_medio = degree_of(distancia['medio'].mf, distancia.universe, dist_val)
-    d_longe = degree_of(distancia['longe'].mf, distancia.universe, dist_val)
-    ax_dist.plot([dist_val]*3, [d_perto, d_medio, d_longe], 'o', markersize=6)
-    ax_dist.text(0.02, 0.95, f"perto={d_perto:.2f}\nmedio={d_medio:.2f}\nlonge={d_longe:.2f}",
-                 transform=ax_dist.transAxes, fontsize=9, verticalalignment='top',
-                 bbox=dict(boxstyle="round", fc="wheat", alpha=0.6))
+    def _prompt_value(self, prompt: str) -> float:
+        while True:
+            try:
+                raw = input(prompt).strip().lower()
+                if raw in {"sair", "exit", "q", "quit"}:
+                    return None
 
-    # Munição MFs
-    ax_mun.plot(municao.universe, municao['baixa'].mf, linestyle='-', label='baixa')
-    ax_mun.plot(municao.universe, municao['media'].mf, linestyle='-', label='media')
-    ax_mun.plot(municao.universe, municao['alta'].mf, linestyle='-', label='alta')
-    ax_mun.set_title(f"Munição (valor = {mun_val})")
-    ax_mun.set_xlabel("Munição")
-    ax_mun.set_ylabel("Grau de pertinência")
-    ax_mun.set_xlim(0, 100)
-    ax_mun.legend()
-    ax_mun.axvline(mun_val, color='gray', linestyle='--', linewidth=1)
-    m_baixa = degree_of(municao['baixa'].mf, municao.universe, mun_val)
-    m_media = degree_of(municao['media'].mf, municao.universe, mun_val)
-    m_alta  = degree_of(municao['alta'].mf, municao.universe, mun_val)
-    ax_mun.plot([mun_val]*3, [m_baixa, m_media, m_alta], 'o', markersize=6)
-    ax_mun.text(0.02, 0.95, f"baixa={m_baixa:.2f}\nmedia={m_media:.2f}\nalta={m_alta:.2f}",
-                transform=ax_mun.transAxes, fontsize=9, verticalalignment='top',
-                bbox=dict(boxstyle="round", fc="wheat", alpha=0.6))
+                value = float(raw.replace(",", "."))
+                if 0 <= value <= 100:
+                    return value
+                print("Valor fora do intervalo permitido (0-100).")
+            except ValueError:
+                print("Entrada inválida. Utilize números ou 'sair'.")
+            except KeyboardInterrupt:
+                print("\nEntrada cancelada pelo usuário.")
+                return None
 
-    # --- Resumo textual (lado direito, top) ---
-    values_text = ""
-    for name, info in results.items():
-        values_text += f"{name}: {info['value']:.2f}\n"
-    best_name = max(results, key=lambda k: results[k]['value'])
-    best_val = results[best_name]['value']
-    values_text += "\nRecomendado:\n" + f"{best_name} ({best_val:.2f})"
-    ax_text.text(0.02, 0.95, values_text, fontsize=12, verticalalignment='top',
-                 bbox=dict(boxstyle="round", fc="lightcyan", alpha=0.9))
+    def _perguntar_continuacao(self) -> bool:
+        while True:
+            try:
+                resposta = input("\nExecutar outro cenário? [s/N]: ").strip().lower()
+                if resposta in {"s", "sim"}:
+                    print()
+                    return True
+                if resposta in {"", "n", "nao"}:
+                    return False
+                print("Entrada inválida. Responda com 's' ou 'n'.")
+            except KeyboardInterrupt:
+                return False
 
-    # --- Função auxiliar para plot de saída com marcação da defuzz e label grande ---
-    def plot_output_labeled(ax, sim, title, big_label):
-        # desenha a agregação + defuzz
-        desejabilidade.view(sim=sim, ax=ax)
-        ax.set_title(title)
-        # marca a defuzz (valor numérico)
-        val = float(sim.output.get('desejabilidade', 0.0))
-        ax.axvline(val, color='k', linestyle='--', linewidth=1.2)
-        ax.text(val, 0.05, f" {val:.2f}", rotation=90, verticalalignment='bottom')
-        # big label (identificador claro da arma)
-        ax.text(0.5, 0.85, big_label, transform=ax.transAxes,
-                fontsize=16, fontweight='bold', ha='center',
-                bbox=dict(boxstyle="round", fc="white", alpha=0.8))
+    def _exibir_console(
+        self,
+        distancia_val: float,
+        municao_val: float,
+        resultados: Dict[str, Dict[str, float]],
+        melhor_arma: str,
+    ) -> None:
+        print("\n+------------------------------------------+")
+        print("| Cenário avaliado                         |")
+        print("+------------------------------------------+")
+        print(f"  Distância do alvo : {distancia_val:5.1f}%")
+        print(f"  Munição disponível: {municao_val:5.1f}%")
 
-    # Plot Pistola
-    plot_output_labeled(ax_p, results['Pistola']['sim'], "Pistola (desejabilidade)", "PISTOLA")
+        print("\nRanking de desejabilidade")
+        print("--------------------------------------------")
 
-    # Plot Sniper
-    plot_output_labeled(ax_s, results['Sniper']['sim'], "Sniper (desejabilidade)", "SNIPER")
+        ordenado = sorted(
+            resultados.items(), key=lambda item: item[1]["value"], reverse=True
+        )
 
-    # Plot Rocket
-    plot_output_labeled(ax_r, results['Rocket Launcher']['sim'], "Rocket Launcher (desejabilidade)", "ROCKET LAUNCHER")
+        for posicao, (arma, dados) in enumerate(ordenado, start=1):
+            score = dados["value"]
+            classificacao = self._classificar(score)
+            prefixo = ">>" if arma == melhor_arma else "  "
+            print(
+                f"{prefixo} {posicao:>2}. {arma:<15} | {score:6.2f}% | {classificacao}"
+            )
 
-    # Salvar figura e mostrar
-    fig.suptitle(f"NPC Weapon Selection - distancia={dist_val}, municao={mun_val}", fontsize=14)
-    fig.savefig(fname, dpi=160)
-    try:
-        plt.show()
-    except Exception:
-        # Em caso de ambiente headless, apenas informe o local do arquivo
-        print(f"(Headless) Gráfico salvo em: {fname}")
+        print("\nRecomendação")
+        print("--------------------------------------------")
+        print(f"  Melhor escolha: {melhor_arma}")
+        print(f"  Pontuação fuzzy: {resultados[melhor_arma]['value']:.2f}%")
 
-    print(f"Gráfico final salvo em: {fname}")
+    def _classificar(self, score: float) -> str:
+        if score >= 60:
+            return "Prioridade máxima"
+        if score >= 30:
+            return "Recomendado"
+        return "Evitar"
 
-# ---------------- Main ----------------
-def main():
-    print("Weapon Selection - versão Python\n")
-    try:
-        d = float(input("Informe a distância do inimigo (0-100): "))
-        m = float(input("Informe a quantidade de munição (0-100): "))
-    except Exception as e:
-        print("Entrada inválida. Use números entre 0 e 100.", e)
-        return
+    def _exibir_grafico(
+        self,
+        distancia_val: float,
+        municao_val: float,
+        resultados: Dict[str, Dict[str, float]],
+        melhor_arma: str,
+    ) -> None:
+        fig = plt.figure(figsize=(15, 5))
+        grid = fig.add_gridspec(1, 3)
 
-    # validar faixa
-    if not (0 <= d <= 100 and 0 <= m <= 100):
-        print("Os valores devem estar entre 0 e 100.")
-        return
+        ax_dist = fig.add_subplot(grid[0, 0])
+        ax_mun = fig.add_subplot(grid[0, 1])
+        ax_bar = fig.add_subplot(grid[0, 2])
 
-    results = avaliar(d, m)
+        self._plot_input(ax_dist, self.distancia, distancia_val, "Distância")
+        self._plot_input(ax_mun, self.municao, municao_val, "Munição")
+        self._plot_bar(ax_bar, distancia_val, municao_val, resultados, melhor_arma)
 
-    print("\n=== Resultados Fuzzy ===")
-    for name, info in results.items():
-        print(f"{name} -> desejabilidade = {info['value']:.2f}")
+        fig.suptitle(
+            "Sistema Fuzzy NPC - Seleção de Armas\n"
+            f"Distância: {distancia_val:.1f}% | Munição: {municao_val:.1f}%",
+            fontsize=15,
+            fontweight="bold",
+        )
+        fig.tight_layout(rect=(0, 0, 1, 0.9))
 
-    best = max(results, key=lambda k: results[k]['value'])
-    print(f"\n>>> Arma Recomendada: {best} (valor = {results[best]['value']:.2f})")
+        try:
+            plt.show()
+        except Exception:
+            fig.savefig("npc_fuzzy_last_result.png", dpi=160)
+            print("⚠️ Ambiente sem suporte gráfico. Resultado salvo em npc_fuzzy_last_result.png")
+        finally:
+            plt.close(fig)
 
-    plot_results(d, m, results)
+    def _plot_input(self, ax, variable: ctrl.Antecedent, val: float, title: str) -> None:
+        xmin = float(variable.universe.min())
+        xmax = float(variable.universe.max())
+        span = xmax - xmin
+        margin = max(span * 0.04, 2.0)
+
+        lines = []
+        for label in variable.terms:
+            mf = variable[label].mf
+            line, = ax.plot(variable.universe, mf, label=label)
+            ax.fill_between(
+                variable.universe,
+                0,
+                mf,
+                color=line.get_color(),
+                alpha=0.08,
+            )
+            lines.append((label, line, mf))
+
+            max_val = mf.max()
+            peak_indices = np.flatnonzero(np.isclose(mf, max_val))
+            peak_x = variable.universe[peak_indices].mean() if peak_indices.size else val
+            label_y = min(max_val + 0.08, 1.1)
+            label_x = float(peak_x)
+            halign = "center"
+
+            if label_x <= xmin + margin:
+                label_x = xmin + margin
+                halign = "left"
+            elif label_x >= xmax - margin:
+                label_x = xmax - margin
+                halign = "right"
+
+            ax.text(
+                label_x,
+                label_y,
+                label.capitalize(),
+                color=line.get_color(),
+                ha=halign,
+                va="bottom",
+                fontsize=9,
+                fontweight="bold",
+                clip_on=False,
+            )
+
+        ax.axvline(val, color="gray", linestyle="--", linewidth=1)
+
+        memberships = {}
+        for label, line, mf in lines:
+            membership = fuzz.interp_membership(
+                variable.universe, mf, val
+            )
+            memberships[label] = membership
+            if membership > 0:
+                ax.scatter(
+                    [val],
+                    [membership],
+                    color=line.get_color(),
+                    edgecolor="black",
+                    zorder=5,
+                    s=35,
+                )
+
+        ax.set_title(f"{title} (valor = {val:.1f})")
+        ax.set_xlabel(title)
+        ax.set_ylabel("Grau de pertinência")
+        ax.set_xlim(variable.universe.min(), variable.universe.max())
+        ax.set_ylim(-0.05, 1.15)
+
+    def _plot_bar(
+        self,
+        ax,
+        distancia_val: float,
+        municao_val: float,
+        resultados: Dict[str, Dict[str, float]],
+        melhor_arma: str,
+    ) -> None:
+        armas = list(resultados.keys())
+        valores = [resultados[arma]["value"] for arma in armas]
+        cores = [resultados[arma]["color"] for arma in armas]
+
+        barras = ax.bar(armas, valores, color=cores, alpha=0.85, edgecolor="black", linewidth=2)
+
+        if melhor_arma in armas:
+            idx = armas.index(melhor_arma)
+            barras[idx].set_edgecolor("gold")
+            barras[idx].set_linewidth(4)
+            barras[idx].set_alpha(1.0)
+
+        for barra, valor in zip(barras, valores):
+            ax.text(
+                barra.get_x() + barra.get_width() / 2,
+                valor + 2,
+                f"{valor:.1f}%",
+                ha="center",
+                va="bottom",
+                fontweight="bold",
+            )
+
+        ax.axhline(30, color="orange", linestyle="--", alpha=0.7, label="Limiar Desejável")
+        ax.axhline(60, color="green", linestyle="--", alpha=0.7, label="Limiar Essencial")
+
+        ax.set_ylabel("Desejabilidade (%)")
+        ax.set_xlabel("Armas")
+        ax.set_ylim(0, 110)
+        ax.set_title("Comparação das armas")
+        ax.grid(axis="y", alpha=0.3)
+        ax.legend()
+
+def main() -> None:
+    app = NPCFuzzyWeaponSelector()
+    app.run()
+
 
 if __name__ == "__main__":
     main()
-cl
